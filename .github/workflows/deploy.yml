@@ -37,12 +37,31 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         port: ${{ secrets.EC2_PORT || 22 }}
         script: |
+          # Instalar dependencias del sistema para Amazon Linux
+          sudo dnf update -y
+          curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+          sudo dnf install -y nodejs
+          sudo npm install -g pm2
+          
+          # Instalar dependencias para Puppeteer
+          sudo dnf install -y atk cups-libs gtk3 libXcomposite libXcursor libXdamage libXext libXi libXrandr libXScrnSaver libXtst pango at-spi2-atk libdrm libxkbcommon libXss
+          
+          # Configurar firewall
+          sudo systemctl start firewalld
+          sudo systemctl enable firewalld
+          sudo firewall-cmd --permanent --add-port=3000/tcp
+          sudo firewall-cmd --reload
+          
           # Crear directorio de la aplicación
           sudo mkdir -p /opt/whatsapp-web-server
+          sudo mkdir -p /var/log/whatsapp-web-server
+          sudo chown -R ec2-user:ec2-user /opt/whatsapp-web-server
+          sudo chown -R ec2-user:ec2-user /var/log/whatsapp-web-server
           cd /opt/whatsapp-web-server
           
           # Detener el servicio si está corriendo
           sudo systemctl stop whatsapp-web-server || true
+          pm2 delete all || true
           
           # Hacer backup de la versión anterior
           if [ -d "app" ]; then
@@ -81,22 +100,22 @@ jobs:
           sudo npm install --production
           
           # Configurar permisos
-          sudo chown -R $USER:$USER /opt/whatsapp-web-server
+          sudo chown -R ec2-user:ec2-user /opt/whatsapp-web-server
           sudo chmod +x /opt/whatsapp-web-server/app/server.js
           
-          # Copiar archivos de configuración del sistema
-          sudo cp /opt/whatsapp-web-server/app/whatsapp-web-server.service /etc/systemd/system/
-          sudo systemctl daemon-reload
-          sudo systemctl enable whatsapp-web-server
-          sudo systemctl start whatsapp-web-server
+          # Usar PM2 en lugar de systemd para Amazon Linux
+          cd /opt/whatsapp-web-server/app
+          pm2 start ecosystem.config.js
+          pm2 save
+          pm2 startup systemd -u ec2-user --hp /home/ec2-user
           
           # Verificar estado
           sleep 5
-          sudo systemctl status whatsapp-web-server --no-pager
+          pm2 status
           
           # Mostrar logs
           echo "=== Últimos logs del servicio ==="
-          sudo journalctl -u whatsapp-web-server --no-pager -n 20
+          pm2 logs whatsapp-web-server --lines 20
           
     - name: Health check
       uses: appleboy/ssh-action@v1.0.3
@@ -118,5 +137,5 @@ jobs:
           done
           
           echo "❌ El servicio no respondió después de 5 minutos"
-          sudo journalctl -u whatsapp-web-server --no-pager -n 50
+          pm2 logs whatsapp-web-server --lines 50
           exit 1
