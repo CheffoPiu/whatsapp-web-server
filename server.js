@@ -97,6 +97,16 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Agregar esta ruta
+app.get('/status', (req, res) => {
+    res.json({
+        isReady: isClientReady,
+        hasQR: !!qrCodeData,
+        clientInfo: clientInfo,
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.get('/api/status', (req, res) => {
     res.json({
         isReady: isClientReady,
