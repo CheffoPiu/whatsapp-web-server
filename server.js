@@ -97,14 +97,27 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Agregar esta ruta
-app.get('/status', (req, res) => {
-    res.json({
-        isReady: isClientReady,
-        hasQR: !!qrCodeData,
-        clientInfo: clientInfo,
-        timestamp: new Date().toISOString()
-    });
+// Reemplazar la ruta /status con esta versión
+app.get('/status', async (req, res) => {
+    try {
+        let qrCodeImage = null;
+        
+        // Si hay QR disponible, generarlo
+        if (qrCodeData) {
+            qrCodeImage = await qrcode.toDataURL(qrCodeData);
+        }
+        
+        res.json({
+            isReady: isClientReady,
+            hasQR: !!qrCodeData,
+            qrCode: qrCodeImage,  // ← Agregar el QR Code
+            clientInfo: clientInfo,
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Error en /status:', err);
+        res.status(500).json({ error: 'Error obteniendo estado' });
+    }
 });
 
 app.get('/api/status', (req, res) => {
