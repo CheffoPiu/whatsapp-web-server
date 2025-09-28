@@ -1,0 +1,122 @@
+name: Deploy WhatsApp Web Server to EC2
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci --only=production
+      
+    - name: Create deployment package
+      run: |
+        mkdir -p deploy
+        cp -r package.json server.js public ecosystem.config.js deploy/
+        cp -r .env.example deploy/.env 2>/dev/null || echo "PORT=3000" > deploy/.env
+        tar -czf whatsapp-web-server.tar.gz -C deploy .
+        
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_PORT || 22 }}
+        script: |
+          # Crear directorio de la aplicación
+          sudo mkdir -p /opt/whatsapp-web-server
+          cd /opt/whatsapp-web-server
+          
+          # Detener el servicio si está corriendo
+          sudo systemctl stop whatsapp-web-server || true
+          
+          # Hacer backup de la versión anterior
+          if [ -d "app" ]; then
+            sudo mv app app.backup.$(date +%Y%m%d_%H%M%S)
+          fi
+          
+          # Crear directorio para la nueva versión
+          sudo mkdir -p app
+          cd app
+          
+    - name: Upload and extract files
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_PORT || 22 }}
+        source: "whatsapp-web-server.tar.gz"
+        target: "/opt/whatsapp-web-server/app/"
+        
+    - name: Setup and start service
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_PORT || 22 }}
+        script: |
+          cd /opt/whatsapp-web-server/app
+          
+          # Extraer archivos
+          sudo tar -xzf whatsapp-web-server.tar.gz
+          sudo rm whatsapp-web-server.tar.gz
+          
+          # Instalar dependencias
+          sudo npm install --production
+          
+          # Configurar permisos
+          sudo chown -R $USER:$USER /opt/whatsapp-web-server
+          sudo chmod +x /opt/whatsapp-web-server/app/server.js
+          
+          # Copiar archivos de configuración del sistema
+          sudo cp /opt/whatsapp-web-server/app/whatsapp-web-server.service /etc/systemd/system/
+          sudo systemctl daemon-reload
+          sudo systemctl enable whatsapp-web-server
+          sudo systemctl start whatsapp-web-server
+          
+          # Verificar estado
+          sleep 5
+          sudo systemctl status whatsapp-web-server --no-pager
+          
+          # Mostrar logs
+          echo "=== Últimos logs del servicio ==="
+          sudo journalctl -u whatsapp-web-server --no-pager -n 20
+          
+    - name: Health check
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        port: ${{ secrets.EC2_PORT || 22 }}
+        script: |
+          # Esperar a que el servicio esté listo
+          for i in {1..30}; do
+            if curl -f http://localhost:3000/api/status > /dev/null 2>&1; then
+              echo "✅ Servicio está funcionando correctamente"
+              curl -s http://localhost:3000/api/status | jq .
+              exit 0
+            fi
+            echo "Esperando que el servicio esté listo... ($i/30)"
+            sleep 10
+          done
+          
+          echo "❌ El servicio no respondió después de 5 minutos"
+          sudo journalctl -u whatsapp-web-server --no-pager -n 50
+          exit 1

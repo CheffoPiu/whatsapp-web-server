@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Web Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: #25D366;
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: white;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .qr-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 2px dashed #dee2e6;
+        }
+        
+        .qr-code {
+            max-width: 250px;
+            margin: 0 auto;
+            display: block;
+        }
+        
+        .qr-text {
+            margin-top: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            color: #1565c0;
+            font-size: 14px;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #25D366;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .client-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 14px;
+        }
+        
+        .client-info h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .client-info p {
+            margin: 5px 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📱</div>
+        <h1>WhatsApp Web Server</h1>
+        <p class="subtitle">Conecta tu WhatsApp para comenzar a enviar mensajes</p>
+        
+        <div id="status" class="status connecting">
+            <div class="loading"></div>
+            Conectando...
+        </div>
+        
+        <div id="qr-container" class="qr-container hidden">
+            <img id="qr-code" class="qr-code" alt="QR Code">
+            <p class="qr-text">
+                Escanea este código QR con WhatsApp en tu teléfono<br>
+                Ve a Menú > Dispositivos vinculados > Vincular un dispositivo
+            </p>
+        </div>
+        
+        <div id="client-info" class="client-info hidden">
+            <h3>Estado de la Conexión</h3>
+            <p><strong>Estado:</strong> <span id="client-state">-</span></p>
+            <p><strong>Conectado desde:</strong> <span id="connection-time">-</span></p>
+        </div>
+        
+        <div class="info">
+            <strong>Instrucciones:</strong><br>
+            1. Escanea el código QR con WhatsApp<br>
+            2. Espera a que se conecte<br>
+            3. ¡Listo para enviar mensajes!
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const statusEl = document.getElementById('status');
+        const qrContainer = document.getElementById('qr-container');
+        const qrCode = document.getElementById('qr-code');
+        const clientInfo = document.getElementById('client-info');
+        const clientState = document.getElementById('client-state');
+        const connectionTime = document.getElementById('connection-time');
+        
+        // Manejar conexión
+        socket.on('connect', () => {
+            console.log('Conectado al servidor');
+        });
+        
+        // Manejar QR Code
+        socket.on('qr', (qrData) => {
+            console.log('QR Code recibido');
+            qrCode.src = qrData;
+            qrContainer.classList.remove('hidden');
+            statusEl.className = 'status connecting';
+            statusEl.innerHTML = '<div class="loading"></div> Esperando escaneo del QR...';
+        });
+        
+        // Manejar autenticación
+        socket.on('authenticated', () => {
+            console.log('Autenticado');
+            statusEl.className = 'status connecting';
+            statusEl.innerHTML = '<div class="loading"></div> Autenticando...';
+        });
+        
+        // Manejar conexión lista
+        socket.on('ready', (info) => {
+            console.log('WhatsApp listo:', info);
+            qrContainer.classList.add('hidden');
+            clientInfo.classList.remove('hidden');
+            statusEl.className = 'status ready';
+            statusEl.innerHTML = '✅ WhatsApp conectado y listo';
+            
+            clientState.textContent = info.state || 'Conectado';
+            connectionTime.textContent = new Date(info.timestamp).toLocaleString();
+        });
+        
+        // Manejar errores de autenticación
+        socket.on('auth_failure', (msg) => {
+            console.error('Error de autenticación:', msg);
+            statusEl.className = 'status error';
+            statusEl.innerHTML = '❌ Error de autenticación: ' + msg;
+        });
+        
+        // Manejar desconexión
+        socket.on('disconnected', (reason) => {
+            console.log('Desconectado:', reason);
+            statusEl.className = 'status error';
+            statusEl.innerHTML = '❌ Desconectado: ' + reason;
+            clientInfo.classList.add('hidden');
+        });
+        
+        // Manejar estado inicial
+        socket.on('status', (status) => {
+            console.log('Estado inicial:', status);
+            
+            if (status.isReady) {
+                statusEl.className = 'status ready';
+                statusEl.innerHTML = '✅ WhatsApp conectado y listo';
+                clientInfo.classList.remove('hidden');
+                clientState.textContent = status.clientInfo?.state || 'Conectado';
+                connectionTime.textContent = status.clientInfo?.timestamp ? 
+                    new Date(status.clientInfo.timestamp).toLocaleString() : '-';
+            } else if (status.hasQR) {
+                qrContainer.classList.remove('hidden');
+                statusEl.className = 'status connecting';
+                statusEl.innerHTML = '<div class="loading"></div> Esperando escaneo del QR...';
+            } else {
+                statusEl.className = 'status connecting';
+                statusEl.innerHTML = '<div class="loading"></div> Iniciando conexión...';
+            }
+        });
+        
+        // Manejar desconexión del socket
+        socket.on('disconnect', () => {
+            statusEl.className = 'status error';
+            statusEl.innerHTML = '❌ Desconectado del servidor';
+        });
+    </script>
+</body>
+</html>

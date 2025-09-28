@@ -1,0 +1,34 @@
+[Unit]
+Description=WhatsApp Web Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/whatsapp-web-server/app
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=whatsapp-web-server
+
+# Variables de entorno
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# Configuración de recursos
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Configuración de seguridad
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/whatsapp-web-server
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
